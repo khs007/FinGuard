@@ -1,19 +1,15 @@
 from retrieval.vector_retrieval import update_summary,add_to_vectordb
 from agent.class_agent import AgentState
 from agent.graph import app
-from langchain_core.messages import HumanMessage,AIMessage,SystemMessage,BaseMessage,ToolMessage
-import uuid
-import datetime
+from langchain_core.messages import HumanMessage,AIMessage
+
 
 session=[]
 memory_summary="Conversation just started!"
-def run_agent():
-    global memory_summary, session
-    session_id = f"sess_{str(uuid.uuid4())[:8]}"
-    
-    while True:
-        user_input = input("Enter query: ")
-        if user_input.lower() in ['exit', 'quit', 'done','stop']: break
+def run_agent(user_input:str):
+        global memory_summary, session
+        session_id = "default_session"
+
 
         # We only pass the CURRENT message. The graph pulls the rest from 'summary'
         active_history = session[-4:]
@@ -29,8 +25,7 @@ def run_agent():
         res = app.invoke(input_state, config={"recursion_limit": 10})
         
         answer = res['messages'][-1].content
-        print(f"\nUSER_QUERY: {user_input}\n")
-        print(f"ANSWER: {answer}\n")
+
         # Phase 2: Update the session history
         session.append(HumanMessage(content=user_input))
         session.append(AIMessage(content=answer))
@@ -45,7 +40,6 @@ def run_agent():
             
             # 3. Truncate the session to keep tokens low for the next turn
             session = session[-4:]
-
-
-if __name__ == "__main__":
-    run_agent()
+        return {
+            "answer":answer
+        }
