@@ -1,0 +1,27 @@
+# Virtual Environment
+venv/
+
+# Environment variables
+.env
+
+# Databases
+chroma.sqlite3
+semantic_history_db/
+*.sqlite3
+
+# Generated LangGraph / UUID folders
+a557eebe-*/
+b5fdc3ee-*/
+
+# Data files
+*.pdf
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
