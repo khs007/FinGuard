@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: finguard-backend
+    runtime: python
+    plan: free          
+    branch: master
+
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+
+    startCommand: |
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+      - key: GOOGLE_API_KEY
+        sync: false
+
+    healthCheckPath: /health
