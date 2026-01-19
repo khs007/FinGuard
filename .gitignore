@@ -1,8 +1,10 @@
 # Virtual Environment
 venv/
+telegram_bot/venv
 
 # Environment variables
 .env
+telegram_bot/.env
 
 # Databases
 chroma.sqlite3
