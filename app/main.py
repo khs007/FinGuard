@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from app.query import query_router
 

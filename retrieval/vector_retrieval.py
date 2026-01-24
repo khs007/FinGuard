@@ -113,4 +113,3 @@ def update_summary(old_memory:str,update_context:list)->str:
     except Exception as e:
             print(f" Summary update failed: {e}")
             return old_memory
-
