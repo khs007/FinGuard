@@ -2,7 +2,6 @@ from agent.class_agent import AgentState
 from smart_budget_manager.transaction_parser import parse_transaction
 from smart_budget_manager.spending_analyser import SpendingAnalyzer
 from smart_budget_manager.alert_generator import AlertGenerator
-from smart_budget_manager.report_generator import generate_monthly_report
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
@@ -17,12 +16,12 @@ class BudgetIntent(BaseModel):
 
 
 def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> AgentState:
-    """Handle finance-related queries and transactions"""
+    """Handle finance-related queries and transactions with IMPROVED ERROR HANDLING"""
     
     messages = state.get("messages", [])
     last_message = messages[-1].content if messages else ""
     
-    # Initialize services (using singleton to avoid recreating indexes)
+    # Initialize services
     from db_.neo4j_finance import get_finance_db
     finance_db = get_finance_db(kg_conn)
     analyzer = SpendingAnalyzer(kg_conn)
@@ -31,7 +30,9 @@ def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> Age
     # Detect query type
     query_lower = last_message.lower()
     
-    # Check if it's a spending report query
+    # ========================================
+    # SPENDING REPORT QUERIES
+    # ========================================
     if any(kw in query_lower for kw in [
         "total spent", "how much spent", "spending", "expenses",
         "remaining", "left", "balance", "budget status",
@@ -47,8 +48,15 @@ def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> Age
                 break
         
         # Get spending data
-        spending_data = analyzer.get_monthly_spending(user_id, category)
-        budget_status = analyzer.check_budget_status(user_id)
+        try:
+            spending_data = analyzer.get_monthly_spending(user_id, category)
+            budget_status = analyzer.check_budget_status(user_id)
+        except Exception as e:
+            print(f"[FinanceHandler] ❌ Database error: {e}")
+            state["messages"].append(
+                AIMessage(content="⚠️ I'm having trouble accessing your financial data. Please try again in a moment.")
+            )
+            return state
         
         if not spending_data:
             response = "You haven't logged any transactions yet this month."
@@ -85,17 +93,29 @@ def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> Age
         state["messages"].append(AIMessage(content=response))
         return state
     
-    # Otherwise, try to parse as transaction
+    # ========================================
+    # TRANSACTION LOGGING
+    # ========================================
     transaction = parse_transaction(last_message)
     
     if transaction:
-        # Store transaction
-        success = finance_db.add_transaction(user_id, transaction.model_dump())
+        # Store transaction WITH ERROR HANDLING
+        try:
+            success = finance_db.add_transaction(user_id, transaction.model_dump())
+        except Exception as e:
+            print(f"[FinanceHandler] ❌ Transaction storage failed: {e}")
+            success = False
         
         if success:
+            print(f"[FinanceHandler] ✅ Transaction logged: ₹{transaction.amount}")
+            
             # Check budget after transaction
-            budget_status = analyzer.check_budget_status(user_id)
-            alert = alert_gen.generate_alert(budget_status)
+            try:
+                budget_status = analyzer.check_budget_status(user_id)
+                alert = alert_gen.generate_alert(budget_status)
+            except Exception as e:
+                print(f"[FinanceHandler] ⚠️ Budget check failed: {e}")
+                alert = None
             
             response = f"✅ Transaction logged: ₹{transaction.amount} for {transaction.description}"
             
@@ -110,7 +130,7 @@ def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> Age
             state["alert_message"] = alert
         else:
             state["messages"].append(
-                AIMessage(content="❌ Failed to log transaction. Please try again.")
+                AIMessage(content="❌ Failed to log transaction due to a database error. Please try again.")
             )
     else:
         state["messages"].append(
@@ -121,7 +141,7 @@ def finance_transaction_handler(state: AgentState, kg_conn, user_id: str) -> Age
 
 
 def handle_budget_setup(state: AgentState, kg_conn, user_id: str) -> AgentState:
-    """Handle budget creation/update via natural language"""
+    """Handle budget creation/update with IMPROVED ERROR HANDLING"""
     
     last_message = state.get("messages", [])[-1].content
     
@@ -139,8 +159,8 @@ RULES:
 Examples:
 - "Set food budget to 5000" → category: food, limit: 5000
 - "My transport budget is 2000 monthly" → category: transport, limit: 2000
-- "I want to spend max 10000 on shopping" → category: shopping, limit: 10000
-- "budget for this month 500 on food" → category: food, limit: 500
+- "budget is 500 on food for this month" → category: food, limit: 500
+- "change food budget to 3000" → category: food, limit: 3000
 """),
         ("human", "{message}")
     ])
@@ -150,26 +170,32 @@ Examples:
     try:
         budget_intent = chain.invoke({"message": last_message})
         
-        # Set budget in database (using singleton)
+        # Set budget in database WITH ERROR HANDLING
         from db_.neo4j_finance import get_finance_db
         finance_db = get_finance_db(kg_conn)
-        success = finance_db.set_budget(
-            user_id=user_id,
-            category=budget_intent.category,
-            monthly_limit=budget_intent.limit
-        )
         
-        if success:
+        try:
+            success = finance_db.set_budget(
+                user_id=user_id,
+                category=budget_intent.category,
+                monthly_limit=budget_intent.limit
+            )
+        except Exception as e:
+            print(f"[BudgetSetup] ❌ Database error: {e}")
+            success = False
+        
+        if success: 
+            print(f"[BudgetSetup] ✅ Budget set: {budget_intent.category} = ₹{budget_intent.limit}")
             response = (
                 f"✅ Budget set successfully!\n"
                 f"   Category: {budget_intent.category.capitalize()}\n"
                 f"   Monthly Limit: ₹{budget_intent.limit:,.2f}"
             )
         else:
-            response = "❌ Failed to set budget. Please try again."
+            response = "❌ Failed to set budget due to a database error. Please try again."
             
     except Exception as e:
-        print(f"[BudgetSetup] Error: {e}")
+        print(f"[BudgetSetup] ❌ Parsing error: {e}")
         response = "I couldn't understand that budget request. Please try: 'Set food budget to 5000'"
     
     state["messages"].append(AIMessage(content=response))
