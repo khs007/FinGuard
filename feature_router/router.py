@@ -1,7 +1,7 @@
-# feature_router/router.py - UPDATED WITH SCAM DETECTION
+# feature_router/router.py - UPDATED WITH CONCEPT EXPLAINER
 """
-Enhanced Feature Router with Scam Detection
-Routes queries to appropriate handlers including scam detection
+Enhanced Feature Router with Concept Explanation
+Routes queries including financial concept explanations
 """
 
 from llm.run_agent import run_agent
@@ -13,7 +13,183 @@ from langchain_core.prompts import ChatPromptTemplate
 
 
 # ========================================
-# QUERY CLASSIFICATION SCHEMA
+# GREETING DETECTION & HANDLER
+# ========================================
+
+def _is_greeting(query: str) -> bool:
+    """
+    Detect if query is a greeting/casual conversation starter
+    
+    Args:
+        query: User's query
+        
+    Returns:
+        True if it's a greeting
+    """
+    query_lower = query.lower().strip()
+    
+    # Direct greetings
+    greetings = [
+        'hi', 'hello', 'hey', 'namaste', 'namaskar',
+        'good morning', 'good afternoon', 'good evening',
+        'hii', 'hiii', 'heyyy', 'helo', 'hlo',
+        'hola', 'sup', 'wassup', "what's up",
+        'kaise ho', 'kya haal hai', 'how are you',
+        'start', 'begin', 'help'
+    ]
+    
+    # Check if query is exactly a greeting
+    if query_lower in greetings:
+        return True
+    
+    # Check if starts with greeting
+    if any(query_lower.startswith(g) for g in greetings):
+        return True
+    
+    # Very short queries that aren't commands
+    if len(query_lower) <= 10 and '?' not in query_lower:
+        # Likely a greeting or unclear input
+        return True
+    
+    return False
+
+
+def handle_greeting(query: str, user_id: str) -> Dict[str, Any]:
+    """
+    Handle greetings with personalized, friendly response in user's language
+    
+    Args:
+        query: User's query
+        user_id: User identifier
+        
+    Returns:
+        Greeting response
+    """
+    from financial_explainer.language_handler import get_language_handler
+    
+    # Detect language
+    language_handler = get_language_handler()
+    lang_detection = language_handler.detect_language(query)
+    
+    print(f"[GreetingHandler] Language: {lang_detection.should_respond_in}")
+    
+    # Get user's recent activity (optional - to personalize)
+    try:
+        from smart_budget_manager.spending_analyser import SpendingAnalyzer
+        from db_.neo4j_finance import get_finance_db
+        
+        finance_db = get_finance_db()
+        analyzer = SpendingAnalyzer(finance_db.kg)
+        spending_summary = analyzer.get_monthly_spending(user_id)
+        
+        has_transactions = len(spending_summary) > 0 if spending_summary else False
+    except:
+        has_transactions = False
+    
+    # Generate greeting based on language
+    if lang_detection.should_respond_in == "hinglish":
+        greeting = _get_hinglish_greeting(has_transactions)
+    elif lang_detection.should_respond_in == "hindi":
+        greeting = _get_hindi_greeting(has_transactions)
+    else:
+        greeting = _get_english_greeting(has_transactions)
+    
+    return {
+        "answer": greeting,
+        "type": "greeting"
+    }
+
+
+def _get_english_greeting(has_transactions: bool) -> str:
+    """Get English greeting"""
+    greeting = "👋 **Hello! I'm FinGuard** - Your Personal Finance Assistant\n\n"
+    
+    if has_transactions:
+        greeting += "**Welcome back!** I can help you with:\n\n"
+    else:
+        greeting += "**Nice to meet you!** I'm here to help with:\n\n"
+    
+    greeting += """🏛️ **Government Schemes**
+   • Check eligibility for schemes
+   • Learn about benefits & subsidies
+   • Get application guidance
+
+💰 **Finance Tracking**
+   • Log your expenses (e.g., "spent 50 on tea")
+   • Check spending reports ("how much spent this month?")
+   • Set budgets for different categories
+
+🛡️ **Scam Detection**
+   • Analyze suspicious messages
+   • Learn about common scams
+   • Stay safe from fraud
+
+💡 **Financial Education**
+   • Understand FD, PPF, mutual funds
+   • Get personalized advice
+   • Learn about investments
+
+**How can I help you today?**
+
+*Try asking:*
+• "What is FD?"
+• "Show my spending"
+• "Am I eligible for MUDRA loan?"
+• "Check if this message is a scam"
+"""
+    
+    return greeting
+
+
+def _get_hinglish_greeting(has_transactions: bool) -> str:
+    """Get Hinglish greeting"""
+    greeting = "👋 **Namaste! Main FinGuard hoon** - Aapka Personal Finance Assistant\n\n"
+    
+    if has_transactions:
+        greeting += "**Welcome back!** Main aapki help kar sakta hoon:\n\n"
+    else:
+        greeting += "**Aapse mil ke achha laga!** Main yeh sab kar sakta hoon:\n\n"
+    
+    greeting += """🏛️ **Government Schemes**
+   • Schemes ke liye eligibility check karo
+   • Benefits aur subsidies ke baare mein jaano
+   • Application guidance lo
+
+💰 **Finance Tracking**
+   • Expenses log karo (jaise "spent 50 on tea")
+   • Spending reports dekho ("kitna spend kiya is mahine?")
+   • Alag categories ke liye budget set karo
+
+🛡️ **Scam Detection**
+   • Suspicious messages analyze karo
+   • Common scams ke baare mein jaano
+   • Fraud se bach ke raho
+
+💡 **Financial Education**
+   • FD, PPF, mutual funds samjho
+   • Personalized advice lo
+   • Investments ke baare mein seekho
+
+**Aaj main aapki kaise madad kar sakta hoon?**
+
+*Try karo ye questions:*
+• "FD kya hai?"
+• "Mera spending dikha"
+• "Kya main MUDRA loan ke liye eligible hoon?"
+• "Check karo kya ye message scam hai"
+"""
+    
+    return greeting
+
+
+def _get_hindi_greeting(has_transactions: bool) -> str:
+    """Get Hindi greeting (for now, returns Hinglish)"""
+    # TODO: Implement proper Devanagari Hindi
+    return _get_hinglish_greeting(has_transactions)
+
+
+# ========================================
+# QUERY CLASSIFICATION SCHEMA (UPDATED)
 # ========================================
 
 class QueryClassification(BaseModel):
@@ -24,34 +200,23 @@ class QueryClassification(BaseModel):
         "spending_query",
         "budget_setup",
         "scam_detection",
-        "scam_analysis",  # NEW: For analyzing suspicious messages
+        "scam_analysis",
+        "concept_explanation",  # NEW: Financial concept explanation
         "general_conversation"
     ] = Field(
         ..., 
         description="Primary category of the user's query"
     )
     
-    confidence: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Confidence score (0.0 to 1.0) for this classification"
-    )
-    
-    reasoning: str = Field(
-        ...,
-        description="Brief explanation of why this category was chosen"
-    )
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    reasoning: str = Field(...)
 
 
 # ========================================
-# LLM-BASED QUERY CLASSIFIER
+# LLM-BASED QUERY CLASSIFIER (UPDATED)
 # ========================================
 
-classification_llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0
-)
+classification_llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
 
 classification_prompt = ChatPromptTemplate.from_messages([
     ("system", """
@@ -59,8 +224,23 @@ You are a query intent classifier for FinGuard, an AI assistant that helps with:
 1. Indian government schemes (eligibility, benefits, application process)
 2. Personal finance tracking (transactions, budgets, spending analysis)
 3. Scam detection and fraud awareness
+4. Financial concept education and explanations
 
 Classify the user's query into ONE of these categories:
+
+**general_conversation**: Greetings, casual chat, unclear intent.
+CRITICAL INDICATORS (highest priority):
+- Single word greetings: "hi", "hello", "hey", "namaste"
+- Short greetings: "hi there", "hello ji", "kaise ho"
+- Very vague: "help", "start", "what can you do"
+- Empty or very short queries (< 10 chars)
+Examples:
+✅ general_conversation: "hi"
+✅ general_conversation: "hello"
+✅ general_conversation: "hey there"
+✅ general_conversation: "namaste"
+✅ general_conversation: "help me"
+❌ government_schemes: "help with MUDRA loan" (specific intent)
 
 **government_schemes**: Questions about government schemes, benefits, eligibility, subsidies, yojanas, loans (MUDRA, PMEGP, etc.), rural/urban schemes, women/farmer/MSME schemes, application process, required documents.
 
@@ -88,47 +268,48 @@ CRITICAL INDICATORS (high priority):
 - "Check this message": providing actual suspicious content
 - "I received": followed by suspicious message/SMS/call description
 - "Someone asked for": OTP, PIN, bank details, money transfer
-- "Should I": trust/click/pay/share followed by suspicious request
-- Includes actual suspicious content: links, phone numbers, offers
-- "Verify this": followed by message content
-- Contains forwarded message text or screenshots
+- Contains actual suspicious content: links, phone numbers, offers
 
+**concept_explanation**: User wants to UNDERSTAND a financial concept/product.
+CRITICAL INDICATORS (high priority):
+- "What is [financial term]": FD, mutual fund, SIP, PPF, ELSS, NPS, insurance
+- "Explain [concept]": any financial product or investment term
+- "Tell me about": financial products, investment options
+- "How does [product] work"
+- "Should I invest in": seeking advice on financial products
+- "Is [product] good": asking for evaluation of financial instruments
+- "Difference between": comparing financial products
+- "What does [term] mean": financial jargon
 Examples:
-✅ scam_analysis: "I got this SMS: 'Your account will be blocked. Click here to verify KYC' - is it real?"
-✅ scam_analysis: "Someone called asking for my OTP. Should I give it?"
-✅ scam_analysis: "Check if this is scam: You won 10 lakh lottery, send 5000 processing fee"
-❌ scam_detection: "How can I protect myself from scams?"
-❌ scam_detection: "What is phishing?"
+✅ concept_explanation: "What is FD?"
+✅ concept_explanation: "Explain mutual funds to me"
+✅ concept_explanation: "Should I invest in PPF or NPS?"
+✅ concept_explanation: "Tell me about SIP"
+✅ concept_explanation: "How does ELSS work?"
+✅ concept_explanation: "Is term insurance good for me?"
+❌ government_schemes: "Am I eligible for MUDRA loan?" (scheme eligibility)
+❌ transaction_logging: "I invested 5000 in FD" (recording transaction)
 
 CRITICAL RULES:
 1. "spent for this month" = spending_query (asking about history)
 2. "spent 50 on tea" = transaction_logging (recording new transaction)
 3. If query contains ACTUAL suspicious content to analyze → scam_analysis
 4. If query asks ABOUT scams in general → scam_detection
-5. "years" in query does NOT mean "rupees"
-6. If query mentions schemes/yojanas/eligibility → ALWAYS government_schemes
-7. Confidence should be HIGH (>0.8) when intent is clear
+5. If query asks to EXPLAIN/UNDERSTAND financial concept → concept_explanation
+6. "what is [financial term]" = concept_explanation (NOT general_conversation)
+7. If query mentions schemes/yojanas/eligibility → ALWAYS government_schemes
+8. Confidence should be HIGH (>0.8) when intent is clear
 
 Return classification with reasoning.
 """),
     ("human", "Query: {query}")
 ])
 
-classifier_chain = classification_prompt | classification_llm.with_structured_output(
-    QueryClassification
-)
+classifier_chain = classification_prompt | classification_llm.with_structured_output(QueryClassification)
 
 
 def classify_query(query: str) -> QueryClassification:
-    """
-    Use LLM to intelligently classify the query intent.
-    
-    Args:
-        query: User's query text
-        
-    Returns:
-        QueryClassification with category, confidence, and reasoning
-    """
+    """Use LLM to intelligently classify the query intent."""
     try:
         classification = classifier_chain.invoke({"query": query})
         
@@ -140,7 +321,6 @@ def classify_query(query: str) -> QueryClassification:
         
     except Exception as e:
         print(f"[QueryClassifier] ❌ Error: {e}")
-        # Fallback to safe default
         return QueryClassification(
             category="general_conversation",
             confidence=0.5,
@@ -149,18 +329,13 @@ def classify_query(query: str) -> QueryClassification:
 
 
 # ========================================
-# MAIN ROUTER
+# MAIN ROUTER (UPDATED)
 # ========================================
 
 def router_feature(req: Dict[str, Any]) -> Dict[str, Any]:
     """
     Intelligent feature router using LLM-based query classification.
-    
-    Args:
-        req: Dictionary with 'query' and optionally 'user_id'
-        
-    Returns:
-        Dictionary with response
+    NOW INCLUDES FINANCIAL CONCEPT EXPLANATION.
     """
     query = req.get("query", "")
     user_id = req.get("user_id", "default_user")
@@ -196,17 +371,24 @@ def router_feature(req: Dict[str, Any]) -> Dict[str, Any]:
         print(f"[FeatureRouter] → SCAM EDUCATION")
         return handle_scam_education(query)
     
+    elif classification.category == "concept_explanation":
+        print(f"[FeatureRouter] → CONCEPT EXPLANATION")
+        return handle_concept_explanation_request(query, user_id)
+    
     else:  # general_conversation or low confidence
+        # Check if it's actually a greeting
+        if _is_greeting(query):
+            print(f"[FeatureRouter] → GREETING")
+            return handle_greeting(query, user_id)
+        
+        # Low confidence - but NOT a greeting
         if classification.confidence < 0.6:
-            # Low confidence - try government schemes as safe default
             print(f"[FeatureRouter] → SCHEMES (low confidence fallback)")
             return run_agent(query, user_id)
-        else:
-            print(f"[FeatureRouter] → GENERAL CONVERSATION")
-            return {
-                "answer": "Hello! I'm FinGuard, your assistant for:\n\n• 🏛️ Government schemes (eligibility, benefits, applications)\n• 💰 Finance tracking (log expenses, check spending, set budgets)\n• 🛡️ Scam detection (analyze suspicious messages, learn about fraud)\n\nHow can I help you today?",
-                "type": "greeting"
-            }
+        
+        # General conversation
+        print(f"[FeatureRouter] → GENERAL CONVERSATION")
+        return handle_greeting(query, user_id)
 
 
 # ========================================
@@ -217,8 +399,6 @@ def handle_transaction_request(query: str, user_id: str) -> Dict[str, Any]:
     """Handle transaction logging requests"""
     from agent.class_agent import AgentState
     from langchain_core.messages import HumanMessage
-    
-    print(f"[TransactionHandler] Processing: '{query}'")
     
     state: AgentState = {
         "messages": [HumanMessage(content=query)],
@@ -252,8 +432,6 @@ def handle_spending_query(query: str, user_id: str) -> Dict[str, Any]:
     from agent.class_agent import AgentState
     from langchain_core.messages import HumanMessage
     
-    print(f"[SpendingQueryHandler] Processing: '{query}'")
-    
     state: AgentState = {
         "messages": [HumanMessage(content=query)],
         "chat_memory": "",
@@ -270,7 +448,6 @@ def handle_spending_query(query: str, user_id: str) -> Dict[str, Any]:
         "finance_mode": True
     }
     
-    # Use same handler but it will detect spending query internally
     updated_state = finance_transaction_handler(state, None, user_id)
     last_message = updated_state["messages"][-1]
     
@@ -284,8 +461,6 @@ def handle_budget_request(query: str, user_id: str) -> Dict[str, Any]:
     """Handle budget setup requests"""
     from agent.class_agent import AgentState
     from langchain_core.messages import HumanMessage
-    
-    print(f"[BudgetHandler] Processing: '{query}'")
     
     state: AgentState = {
         "messages": [HumanMessage(content=query)],
@@ -312,13 +487,54 @@ def handle_budget_request(query: str, user_id: str) -> Dict[str, Any]:
     }
 
 
-def handle_scam_analysis(query: str, user_id: str) -> Dict[str, Any]:
+def handle_concept_explanation_request(query: str, user_id: str) -> Dict[str, Any]:
     """
-    Handle scam analysis requests - analyze specific suspicious content
+    Handle financial concept explanation requests
+    NEW HANDLER FOR CONCEPT EDUCATION
     """
-    from scam_detector.scam_detector import get_scam_detector
+    from agent.financial_explainer_handler import handle_concept_explanation
+    from agent.class_agent import AgentState
+    from langchain_core.messages import HumanMessage
     
-    print(f"[ScamAnalysisHandler] Analyzing suspicious content for user {user_id}")
+    print(f"[ConceptHandler] Processing concept explanation for user {user_id}")
+    
+    state: AgentState = {
+        "messages": [HumanMessage(content=query)],
+        "chat_memory": "",
+        "unstructured_context": "",
+        "structured_context": "",
+        "question": query,
+        "rewrite_count": 0,
+        "user_profile": {},
+        "target_profile": {},
+        "target_scope": "generic",
+        "transaction_data": None,
+        "budget_status": None,
+        "alert_message": None,
+        "finance_mode": False
+    }
+    
+    try:
+        updated_state = handle_concept_explanation(state, user_id)
+        last_message = updated_state["messages"][-1]
+        
+        return {
+            "answer": last_message.content,
+            "type": "concept_explanation",
+            "user_profile": updated_state.get("user_profile", {})
+        }
+        
+    except Exception as e:
+        print(f"[ConceptHandler] ❌ Error: {e}")
+        return {
+            "answer": "I'm having trouble explaining that concept right now. Could you rephrase your question?",
+            "type": "concept_explanation_error"
+        }
+
+
+def handle_scam_analysis(query: str, user_id: str) -> Dict[str, Any]:
+    """Handle scam analysis requests"""
+    from scam_detector.scam_detector import get_scam_detector
     
     try:
         detector = get_scam_detector()
@@ -338,7 +554,6 @@ def handle_scam_analysis(query: str, user_id: str) -> Dict[str, Any]:
             emoji = "✅"
             verdict = "**APPEARS SAFE** (but stay vigilant)"
         
-        # Build response
         response = f"{emoji} **Scam Analysis Report**\n\n"
         response += f"**Verdict:** {verdict}\n"
         response += f"**Risk Level:** {result.risk_level}\n"
@@ -349,13 +564,11 @@ def handle_scam_analysis(query: str, user_id: str) -> Dict[str, Any]:
         
         if result.red_flags:
             response += "**⚠️ Red Flags Detected:**\n"
-            for flag in result.red_flags[:5]:  # Limit to top 5
+            for flag in result.red_flags[:5]:
                 response += f"  • {flag}\n"
             response += "\n"
         
         response += f"**💡 Recommendation:**\n{result.recommendation}\n\n"
-        
-        # Add general safety tips
         response += "**🛡️ General Safety Tips:**\n"
         response += "• Never share OTP, PIN, CVV, or passwords\n"
         response += "• Banks never ask for sensitive info via SMS/call\n"
@@ -377,9 +590,7 @@ def handle_scam_analysis(query: str, user_id: str) -> Dict[str, Any]:
 
 
 def handle_scam_education(query: str) -> Dict[str, Any]:
-    """
-    Handle general scam education/awareness queries
-    """
+    """Handle general scam education/awareness queries"""
     response = """🛡️ **Scam Awareness & Protection**
 
 **Common Scam Types in India:**
