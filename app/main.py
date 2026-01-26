@@ -1,54 +1,160 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from app.query import query_router
 from contextlib import asynccontextmanager
+import os
+import sys
 
-# Lifespan context manager for startup/shutdown
+# Startup/shutdown lifecycle
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize Finance DB (creates indexes once)
-    print("[Startup] Initializing Finance Database...")
-    from db_.neo4j_finance import get_finance_db
-    from retrieval.kg_retrieval import kg_conn
+    """
+    Initialize services on startup, cleanup on shutdown
+    """
+    print("\n" + "="*60)
+    print("🚀 FINGUARD STARTUP")
+    print("="*60)
+    
+    # ============================================================
+    # PHASE 1: Validate Environment Variables
+    # ============================================================
+    print("\n[Phase 1] Validating environment variables...")
+    
+    required_vars = [
+        "GROQ_API_KEY",
+        "GOOGLE_API_KEY", 
+        "NEO4J_URI",
+        "NEO4J_USERNAME",
+        "NEO4J_PASSWORD",
+        "NEO4J_URI2",
+        "NEO4J_USERNAME2", 
+        "NEO4J_PASSWORD2"
+    ]
+    
+    missing = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing:
+        print(f"❌ FATAL: Missing environment variables: {missing}")
+        print("💡 Add these in Render Dashboard → Environment → Environment Variables")
+        sys.exit(1)
+    
+    print("✅ All required environment variables present")
+    
+    # ============================================================
+    # PHASE 2: Initialize Finance Database (CRITICAL)
+    # ============================================================
+    print("\n[Phase 2] Initializing Finance Database...")
     
     try:
-        # This will create indexes on first call
-        finance_db = get_finance_db(kg_conn)
-        print("[Startup] ✅ Finance DB initialized")
+        from db_.neo4j_finance import get_finance_db
+        finance_db = get_finance_db()
+        
+        # Verify connection
+        if not finance_db.verify_connection():
+            raise Exception("Finance DB connection failed")
+        
+        print("✅ Finance Database ready")
+        
     except Exception as e:
-        print(f"[Startup] ⚠️ Finance DB initialization failed: {e}")
+        print(f"❌ Finance DB initialization failed: {e}")
+        print("⚠️  Finance features will be unavailable")
+        # Don't exit - allow app to start in degraded mode
     
-    # Initialize Scam Detector (optional, will auto-initialize on first use)
+    # ============================================================
+    # PHASE 3: Initialize Scam Detector (OPTIONAL)
+    # ============================================================
+    print("\n[Phase 3] Initializing Scam Detector...")
+    
     try:
         from scam_detector.scam_detector import get_scam_detector
         detector = get_scam_detector()
-        print("[Startup] ✅ Scam Detector initialized")
+        print("✅ Scam Detector ready")
     except Exception as e:
-        print(f"[Startup] ⚠️ Scam Detector initialization failed: {e}")
+        print(f"⚠️  Scam Detector initialization failed: {e}")
+        print("   (This is optional - continuing anyway)")
+    
+    # ============================================================
+    # PHASE 4: Initialize Knowledge Graph (LAZY - NON-BLOCKING)
+    # ============================================================
+    print("\n[Phase 4] Preparing Knowledge Graph...")
+    print("ℹ️  KG will initialize on first query (lazy loading)")
+    
+    # DON'T do this here - it blocks startup:
+    # from retrieval.pdf_loader import init_if_available
+    # init_if_available()  # ❌ BLOCKING
+    
+    # Instead, just validate the PDF URL
+    pdf_url = os.getenv("PDF_URL")
+    if pdf_url:
+        print(f"✅ PDF URL configured: {pdf_url[:50]}...")
+    else:
+        print("⚠️  PDF_URL not set - KG features may be limited")
+    
+    # ============================================================
+    # STARTUP COMPLETE
+    # ============================================================
+    print("\n" + "="*60)
+    print("✅ FINGUARD READY TO SERVE")
+    print("="*60 + "\n")
     
     yield
- 
-app = FastAPI(lifespan=lifespan)
+    
+    # ============================================================
+    # SHUTDOWN
+    # ============================================================
+    print("\n🛑 Shutting down FinGuard...")
+    print("✅ Cleanup complete\n")
 
-app.include_router(query_router)
 
-@app.get("/health")
-def health_check():
-    return {
-        "status": "ok",
-        "service": "FinGuard",
-        "features": [
-            "government_schemes",
-            "finance_tracking",
-            "scam_detection"
-        ]
-    }
+# Create FastAPI app
+app = FastAPI(
+    title="FinGuard API",
+    description="AI-powered financial assistant for Indian users",
+    version="1.0.0",
+    lifespan=lifespan
+)
 
-from fastapi.middleware.cors import CORSMiddleware
+# CORS configuration (RESTRICT IN PRODUCTION)
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # for demo only
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(query_router)
+
+# Health check endpoint
+@app.get("/health")
+def health_check():
+    """
+    Health check endpoint for Render
+    """
+    return {
+        "status": "healthy",
+        "service": "FinGuard",
+        "version": "1.0.0",
+        "features": {
+            "government_schemes": True,
+            "finance_tracking": True,
+            "scam_detection": True,
+            "concept_explanation": True
+        }
+    }
+
+# Root endpoint
+@app.get("/")
+def root():
+    """
+    Root endpoint - API documentation
+    """
+    return {
+        "message": "Welcome to FinGuard API",
+        "docs": "/docs",
+        "health": "/health",
+        "version": "1.0.0"
+    }

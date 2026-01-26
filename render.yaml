@@ -2,19 +2,65 @@ services:
   - type: web
     name: finguard-backend
     runtime: python
-    plan: free          
-    branch: master
-
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-
-    startCommand: 
-      uvicorn app.main:app --host 0.0.0.0 --port $PORT
-
+    plan: free
+    branch: master  # or main - check your default branch
+    
+    # Build command
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    
+    # Start command with proper worker configuration
+    startCommand: |
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --timeout-keep-alive 30
+    
+    # Environment variables (ADD ALL OF THESE)
     envVars:
       - key: PYTHONUNBUFFERED
         value: "1"
-
+      
+      # LLM API Keys
+      - key: GROQ_API_KEY
+        sync: false  # You'll add this in Render dashboard
+      
       - key: GOOGLE_API_KEY
         sync: false
-
+      
+      # Neo4j Schemes Database (Database 1)
+      - key: NEO4J_URI
+        sync: false
+      
+      - key: NEO4J_USERNAME
+        sync: false
+      
+      - key: NEO4J_PASSWORD
+        sync: false
+      
+      - key: NEO4J_DATABASE
+        value: "neo4j"  # Default database name
+      
+      # Neo4j Finance Database (Database 2)
+      - key: NEO4J_URI2
+        sync: false
+      
+      - key: NEO4J_USERNAME2
+        sync: false
+      
+      - key: NEO4J_PASSWORD2
+        sync: false
+      
+      # PDF Configuration (IMPORTANT)
+      - key: PDF_URL
+        value: "https://msme.gov.in/sites/default/files/MSME_Schemes_English_0.pdf"
+      
+      - key: ENABLED
+        value: "true"
+    
+    # Health check
     healthCheckPath: /health
+    
+    # Disk storage for PDFs and vector DBs
+    disk:
+      name: finguard-data
+      mountPath: /opt/render/project/src
+      sizeGB: 1
