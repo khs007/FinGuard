@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.query import query_router
 from contextlib import asynccontextmanager
+from scam_detector.scam_detector import load_scam_bundle
 
 # Lifespan context manager for startup/shutdown
 @asynccontextmanager
@@ -18,10 +19,7 @@ async def lifespan(app: FastAPI):
         print(f"[Startup] ⚠️ Finance DB initialization failed: {e}")
     
     yield
-    
-    # Shutdown: Cleanup if needed
-    print("[Shutdown] Cleaning up...")
-
+ 
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(query_router)
