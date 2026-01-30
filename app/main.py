@@ -4,7 +4,7 @@ from app.query import query_router
 from contextlib import asynccontextmanager
 import os
 import sys
-from app.email_api import email_router
+import asyncio
 
 # Startup/shutdown lifecycle
 @asynccontextmanager
@@ -68,16 +68,39 @@ async def lifespan(app: FastAPI):
     print("\n[Phase 4] Preparing Knowledge Graph...")
     print("ℹ️  KG will initialize on first query (lazy loading)")
     
-    # DON'T do this here - it blocks startup:
-    # from retrieval.pdf_loader import init_if_available
-    # init_if_available()  # ❌ BLOCKING
-    
-    # Instead, just validate the PDF URL
     pdf_url = os.getenv("PDF_URL")
     if pdf_url:
         print(f"✅ PDF URL configured: {pdf_url[:50]}...")
     else:
         print("⚠️  PDF_URL not set - KG features may be limited")
+
+    # NEW: Phase 5 - Start Email Auto-Scanner
+    print("\n[Phase 5] Starting Email Auto-Scanner...")
+    
+    try:
+        from email_auto_scanner import get_auto_scanner, start_background_scanner
+        
+        # Check if Gmail is available
+        try:
+            from email_service import GMAIL_AVAILABLE
+            
+            if GMAIL_AVAILABLE:
+                # Start scanner in background
+                scanner_task = asyncio.create_task(start_background_scanner())
+                print("✅ Email Auto-Scanner started in background")
+                
+                # Store task reference so we can cancel it on shutdown
+                app.state.scanner_task = scanner_task
+            else:
+                print("⚠️  Gmail API not available - Auto-Scanner disabled")
+                print("   Install: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
+        
+        except ImportError:
+            print("⚠️  Email service not available - Auto-Scanner disabled")
+    
+    except Exception as e:
+        print(f"⚠️  Email Auto-Scanner initialization failed: {e}")
+        print("   (Email features will still work manually)")
 
     print("\n" + "="*60)
     print("✅ FINGUARD READY TO SERVE")
@@ -85,7 +108,28 @@ async def lifespan(app: FastAPI):
     
     yield
 
+    # Shutdown
     print("\n🛑 Shutting down FinGuard...")
+    
+    # Stop auto-scanner if running
+    if hasattr(app.state, 'scanner_task'):
+        print("⏹️ Stopping Email Auto-Scanner...")
+        try:
+            from email_auto_scanner import get_auto_scanner
+            scanner = get_auto_scanner()
+            scanner.stop()
+            
+            # Cancel background task
+            app.state.scanner_task.cancel()
+            try:
+                await app.state.scanner_task
+            except asyncio.CancelledError:
+                pass
+            
+            print("✅ Auto-Scanner stopped")
+        except Exception as e:
+            print(f"⚠️ Error stopping scanner: {e}")
+    
     print("✅ Cleanup complete\n")
 
 
@@ -104,21 +148,41 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],  # Added PUT, DELETE
     allow_headers=["*"],
 )
 
 # Include routers
 app.include_router(query_router)
-# After existing routers
-app.include_router(email_router)
+
+# Include email router (with auto-scanner)
+try:
+    from app.email_api_enhanced import email_router
+    app.include_router(email_router)
+    print("[Main] ✅ Email API (with Auto-Scanner) loaded")
+except ImportError:
+    print("[Main] ⚠️ Email API not available")
 
 # Health check endpoint
-@app.head("/health")
+@app.get("/health")
 def health_check():
     """
     Health check endpoint for Render
     """
+    # Check auto-scanner status
+    auto_scanner_status = "disabled"
+    try:
+        from email_auto_scanner import get_auto_scanner
+        scanner = get_auto_scanner()
+        if scanner.is_running:
+            auto_scanner_status = "running"
+            registered_users = len(scanner.users)
+        else:
+            auto_scanner_status = "stopped"
+            registered_users = 0
+    except:
+        registered_users = 0
+    
     return {
         "status": "healthy",
         "service": "FinGuard",
@@ -127,12 +191,18 @@ def health_check():
             "government_schemes": True,
             "finance_tracking": True,
             "scam_detection": True,
-            "concept_explanation": True
+            "concept_explanation": True,
+            "email_scam_detection": True,
+            "auto_email_scanner": auto_scanner_status
+        },
+        "auto_scanner": {
+            "status": auto_scanner_status,
+            "registered_users": registered_users
         }
     }
 
 # Root endpoint
-@app.head("/")
+@app.get("/")
 def root():
     """
     Root endpoint - API documentation
@@ -141,5 +211,8 @@ def root():
         "message": "Welcome to FinGuard API",
         "docs": "/docs",
         "health": "/health",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "new_features": [
+            "Automatic Email Scam Scanner - Register at /email/auto-scan/register"
+        ]
     }
