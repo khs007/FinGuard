@@ -276,6 +276,8 @@ Examples:
 ✅ email_scam_check: "Scan my inbox"
 ✅ email_scam_check: "Are my recent emails safe?"
 
+
+
 CRITICAL RULES:
 1. "spent for this month" = spending_query (asking about history)
 2. "spent 50 on tea" = transaction_logging (recording new transaction)

@@ -200,6 +200,9 @@ def handle_single_email_analysis(email_text: str, sender: str = None, subject: s
         from email_scam_analyser import get_email_analyzer, EmailScamResult
         from datetime import datetime
         
+
+
+
         # Build analysis text
         analysis_text = ""
         if subject:

@@ -4,6 +4,9 @@ from app.query import query_router
 from contextlib import asynccontextmanager
 import os
 import sys
+from app.upi_api import upi_router
+
+# Add with other router includes
 
 # Startup/shutdown lifecycle
 @asynccontextmanager
@@ -101,7 +104,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(query_router)
-
+app.include_router(upi_router)  
 # Include email router
 try:
     from app.email_api import email_router
