@@ -42,8 +42,17 @@ class ScamDetector:
             import joblib
             model_path = "model/scam_bundle.pkl"
             if os.path.exists(model_path):
-                print("[ScamDetector] ✅ ML model loaded")
-                return joblib.load(model_path)
+                loaded = joblib.load(model_path)
+                
+                # ✅ FIX: Check if it's a dict or just the model
+                if isinstance(loaded, dict):
+                    print("[ScamDetector] ✅ ML model bundle loaded (dict format)")
+                    return loaded
+                else:
+                    # It's just the model object, not a bundle
+                    print("[ScamDetector] ⚠️ ML model loaded but in old format (model only, no vectorizers)")
+                    print("[ScamDetector] ℹ️  Running in LLM-only mode")
+                    return None  # Can't use it without vectorizers
             else:
                 print("[ScamDetector] ⚠️ ML model not found, using LLM-only mode")
                 return None
@@ -148,38 +157,69 @@ Analyze this message and determine if it's a scam.
         """Use ML model for prediction if available"""
         try:
             from scipy.sparse import hstack
+            import numpy as np
             
             bundle = self.ml_model
-            model = bundle["model"]
-            tfidf_scam = bundle["tfidf_scam"]
+            
+            # ✅ FIX: Properly extract components from bundle
+            model = bundle.get("model")
+            tfidf_scam = bundle.get("tfidf_scam")
             tfidf_response = bundle.get("tfidf_response")
             safe_features = bundle.get("safe_numerical_features", [])
+            
+            if model is None or tfidf_scam is None:
+                print("[ScamDetector] ⚠️ ML model or vectorizer missing")
+                return None
             
             # Transform text
             X_scam = tfidf_scam.transform([message])
             
             # Handle response text if available
             response_text = context.get("response_text", "")
-            if tfidf_response:
+            if tfidf_response is not None:
                 X_resp = tfidf_response.transform([response_text])
             else:
                 X_resp = None
             
             # Numerical features
-            numeric_values = [context.get(f, 0) for f in safe_features]
+            numeric_values = []
+            for feature in safe_features:
+                value = context.get(feature, 0)
+                # Ensure it's a number
+                if isinstance(value, (int, float)):
+                    numeric_values.append(value)
+                else:
+                    numeric_values.append(0)
+            
+            # ✅ FIX: Create proper numpy array
+            numeric_array = np.array([numeric_values])
             
             # Combine features
             if X_resp is not None:
-                X = hstack([X_scam, X_resp, [numeric_values]])
+                X = hstack([X_scam, X_resp, numeric_array])
             else:
-                X = hstack([X_scam, [numeric_values]])
+                X = hstack([X_scam, numeric_array])
             
-            # Predict
-            proba = model.predict_proba(X)[0][1]
-            return float(proba)
+            # ✅ FIX: Predict probability correctly
+            try:
+                # Get probability of class 1 (scam)
+                proba = model.predict_proba(X)
+                
+                # proba is shape (n_samples, n_classes)
+                # We want probability of class 1 (scam class)
+                scam_probability = float(proba[0, 1])
+                
+                print(f"[ScamDetector] ✅ ML prediction: {scam_probability:.2%} scam probability")
+                return scam_probability
+                
+            except Exception as e:
+                print(f"[ScamDetector] ⚠️ Prediction failed: {e}")
+                return None
             
         except Exception as e:
             print(f"[ScamDetector] ⚠️ ML prediction failed: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _fallback_analysis(self, message: str, red_flags: list[str]) -> Dict[str, Any]:

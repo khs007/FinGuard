@@ -20,7 +20,7 @@ def handle_email_scam_check(user_id: str, hours_ago: int = 24, max_emails: int =
     """
     try:
         from email_service import get_email_service
-        from email_scam_analyzer import get_email_analyzer
+        from email_scam_analyser import get_email_analyzer
         
         # Get services
         email_service = get_email_service()
@@ -197,7 +197,7 @@ def handle_single_email_analysis(email_text: str, sender: str = None, subject: s
     """
     try:
         from scam_detector.scam_detector import get_scam_detector
-        from email_scam_analyzer import get_email_analyzer, EmailScamResult
+        from email_scam_analyser import get_email_analyzer, EmailScamResult
         from datetime import datetime
         
         # Build analysis text
