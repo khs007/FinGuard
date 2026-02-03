@@ -2,7 +2,7 @@ from langchain_neo4j import Neo4jGraph
 from datetime import datetime
 import uuid
 import os
-from .neo4j_init import init_neo4j
+
 
 class FinanceDB:
     def __init__(self, kg_conn: Neo4jGraph = None):

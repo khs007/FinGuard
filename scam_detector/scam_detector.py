@@ -40,13 +40,26 @@ class ScamDetector:
         """Load ML model if available"""
         try:
             import joblib
-            model_path = "model/scam_bundle.pkl"
+            from pathlib import Path
+            BASE_DIR = Path(__file__).resolve().parent.parent
+            model_path = BASE_DIR / "model" / "scam_bundle (1).pkl"
+
+            obj = joblib.load("model/scam_bundle (1).pkl")
+
+            print(type(obj))
+            print(obj)
+
             if os.path.exists(model_path):
                 loaded = joblib.load(model_path)
+                loaded = joblib.load(model_path)
+
+                print("[ScamDetector] 📦 Loaded path:", model_path)
+                print("[ScamDetector] 📦 Loaded type:", type(loaded))
+
                 
                 # ✅ FIX: Check if it's a dict or just the model
                 if isinstance(loaded, dict):
-                    print("[ScamDetector] ✅ ML model bundle loaded (dict format)")
+                    print("[ScamDetector] 📦 Bundle keys:", loaded.keys())
                     return loaded
                 else:
                     # It's just the model object, not a bundle

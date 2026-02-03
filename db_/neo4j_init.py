@@ -1,7 +1,7 @@
-from retrieval.kg_retrieval import kg_conn
+from retrieval.kg_retrieval import _kg_conn
 
 def create_indexes():
-    kg_conn.query("""
+    _kg_conn.query("""
     CREATE FULLTEXT INDEX entity_name_index
     IF NOT EXISTS
     FOR (n:Entity)
